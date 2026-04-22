@@ -6,3 +6,6 @@ DerivedData/
 xcuserdata/
 
 nohup.out
+
+# DICOM Data
+echocardiography\ analysis\ DICOM/

@@ -207,6 +207,22 @@ public enum DicomTag: Int {
     /// (0008,0080) - Institution Name
     case institutionName = 0x00080080
 
+    // MARK: - Temporal / Cine Tags
+
+    /// (0018,0040) - Cine Rate (frames per second, integer)
+    case cineRate = 0x00180040
+
+    /// (0018,1063) - Frame Time (nominal ms between frames)
+    case frameTime = 0x00181063
+
+    /// (0018,1065) - Frame Time Vector (variable-rate, backslash-separated ms values)
+    case frameTimeVector = 0x00181065
+
+    // MARK: - SOP Common
+
+    /// (0008,0016) - SOP Class UID
+    case sopClassUID = 0x00080016
+
     // MARK: - Transfer Syntax
 
     /// (0002,0010) - Transfer Syntax UID

@@ -209,6 +209,49 @@ public protocol DicomDecoderProtocol: AnyObject {
     /// - Returns: Dictionary with series information (SeriesInstanceUID, SeriesNumber, etc.)
     func getSeriesInfo() -> [String: String]
 
+    // MARK: - Temporal / Cine Properties
+
+    /// Nominal time between frames in milliseconds (tag 0018,1063).
+    /// Returns 0.0 if the tag is absent.
+    var frameTime: Double { get }
+
+    /// Per-frame time vector for variable-rate loops in milliseconds (tag 0018,1065).
+    /// Empty when the tag is absent or the loop has a fixed frame rate.
+    var frameTimeVector: [Double] { get }
+
+    /// Cine rate in frames per second (tag 0018,0040).
+    /// Returns 0.0 if the tag is absent.
+    var cineRate: Double { get }
+
+    /// Derived playback frame rate (fps). Resolution order:
+    /// 1. `cineRate` (if > 0)
+    /// 2. `1000.0 / frameTime` (if frameTime > 0)
+    /// 3. 30.0 (safe default for ultrasound)
+    var derivedFrameRate: Double { get }
+
+    /// Total number of frames.  Alias for `nImages` for clarity in cine contexts.
+    var numberOfFrames: Int { get }
+
+    // MARK: - Frame-Indexed Pixel Access
+
+    /// Returns the 8-bit pixel buffer for the given frame index.
+    /// Returns nil if not available, if the image is not 8-bit grayscale,
+    /// or if frameIndex is out of range.
+    /// - Parameter frame: The zero-based frame index.
+    func getPixels8(frame: Int) -> [UInt8]?
+
+    /// Returns the 16-bit pixel buffer for the given frame index.
+    /// Returns nil if not available, if the image is not 16-bit grayscale,
+    /// or if frameIndex is out of range.
+    /// - Parameter frame: The zero-based frame index.
+    func getPixels16(frame: Int) -> [UInt16]?
+
+    /// Returns the 24-bit interleaved RGB pixel buffer for the given frame index.
+    /// Returns nil if not available, if the image is not RGB,
+    /// or if frameIndex is out of range.
+    /// - Parameter frame: The zero-based frame index.
+    func getPixels24(frame: Int) -> [UInt8]?
+
     // MARK: - Convenience Properties
 
     /// Quick check if this is a valid grayscale image.

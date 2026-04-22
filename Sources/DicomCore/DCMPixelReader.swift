@@ -830,51 +830,297 @@ internal final class DCMPixelReader {
         return result
     }
 
-    /// Attempts to decode compressed pixel data using ImageIO.
-    /// This function supports common DICOM transfer syntaxes
-    /// including JPEG Baseline, JPEG Extended, JPEG‑LS and
-    /// JPEG2000.  The compressed data is assumed to begin at
-    /// ``offset`` and extend to the end of ``data``.  On
-    /// success the pixel buffers are populated accordingly.
+    // MARK: - Multi-Frame Encapsulated Support
+
+    /// Parses the encapsulated pixel data sequence starting at `offset` and
+    /// builds a table of `(offset, length)` byte ranges — one per frame —
+    /// measured from the start of `data`.
+    ///
+    /// The parser first looks for a non-empty Basic Offset Table (BOT).  If
+    /// the BOT is empty (length == 0) it falls back to a linear scan of Item
+    /// tags `(FFFE,E000)` stopping at the Sequence Delimitation tag
+    /// `(FFFE,E0DD)`.
     ///
     /// - Parameters:
-    ///   - data: Raw DICOM file data
-    ///   - offset: Byte offset to compressed pixel data
-    ///   - logger: Optional logger for debugging
-    /// - Returns: Pixel read result with populated buffers, or nil on failure
+    ///   - data:   Full DICOM file data.
+    ///   - offset: Byte position of the Pixel Data value (first byte of the
+    ///             encapsulated sequence, i.e. the BOT item tag).
+    ///   - logger: Optional diagnostic logger.
+    /// - Returns: Array of `(offset: Int, length: Int)` tuples, one per
+    ///            frame, or `nil` if parsing fails.
+    internal static func parseEncapsulatedFrameOffsets(
+        data: Data,
+        offset: Int,
+        logger: AnyLogger? = nil
+    ) -> [(offset: Int, length: Int)]? {
+        guard offset >= 0, offset + 8 <= data.count else {
+            logger?.warning("[EncapsulatedParser] offset \(offset) out of bounds")
+            return nil
+        }
+
+        var cursor = offset
+
+        // The sequence always begins with a BOT item tag (FFFE,E000)
+        guard readUInt32LE(in: data, at: cursor) == itemTag else {
+            logger?.warning("[EncapsulatedParser] Missing BOT item tag at \(cursor)")
+            return nil
+        }
+        cursor += 4
+
+        guard let botLength32 = readUInt32LE(in: data, at: cursor) else { return nil }
+        cursor += 4
+        let botLength = Int(botLength32)
+        guard cursor + botLength <= data.count else {
+            logger?.warning("[EncapsulatedParser] BOT length \(botLength) exceeds data")
+            return nil
+        }
+
+        // Remember cursor position right after BOT (= start of first frame item)
+        let botData = data[cursor ..< cursor + botLength]
+        cursor += botLength
+        let firstItemStart = cursor  // absolute position of first frame's item tag
+
+        // --- Strategy 1: non-empty BOT ------------------------------------------
+        if botLength >= 4 && botLength % 4 == 0 {
+            var result = [(offset: Int, length: Int)]()
+            let entryCount = botLength / 4
+
+            for i in 0..<entryCount {
+                guard let relOffset32 = readUInt32LE(in: botData, at: i * 4) else {
+                    logger?.warning("[EncapsulatedParser] BOT entry \(i) unreadable")
+                    return nil
+                }
+                let itemStart = firstItemStart + Int(relOffset32)
+
+                // Each BOT entry points to the item tag of the frame.
+                // Read that item's length to get the frame's byte range.
+                guard itemStart + 8 <= data.count else {
+                    logger?.warning("[EncapsulatedParser] BOT[\(i)] offset \(itemStart) out of bounds")
+                    return nil
+                }
+                guard readUInt32LE(in: data, at: itemStart) == itemTag else {
+                    logger?.warning("[EncapsulatedParser] BOT[\(i)] expected item tag at \(itemStart)")
+                    return nil
+                }
+                guard let itemLen32 = readUInt32LE(in: data, at: itemStart + 4) else { return nil }
+                let itemLen = Int(itemLen32)
+                let dataStart = itemStart + 8  // skip item tag + length
+                guard dataStart + itemLen <= data.count else {
+                    logger?.warning("[EncapsulatedParser] BOT[\(i)] item data exceeds bounds")
+                    return nil
+                }
+                result.append((offset: dataStart, length: itemLen))
+            }
+            if !result.isEmpty {
+                logger?.debug("[EncapsulatedParser] BOT path: \(result.count) frames")
+                return result
+            }
+        }
+
+        // --- Strategy 2: scan Item tags ----------------------------------------
+        var result = [(offset: Int, length: Int)]()
+        cursor = firstItemStart
+
+        while cursor + 8 <= data.count {
+            guard let tag = readUInt32LE(in: data, at: cursor) else { break }
+            cursor += 4
+            guard let itemLen32 = readUInt32LE(in: data, at: cursor) else { break }
+            cursor += 4
+
+            if tag == sequenceDelimitationTag { break }
+            guard tag == itemTag else {
+                logger?.warning("[EncapsulatedParser] Unexpected tag 0x\(String(tag, radix: 16, uppercase: true)) at \(cursor - 8)")
+                break
+            }
+
+            let itemLen = Int(itemLen32)
+            guard itemLen >= 0, cursor + itemLen <= data.count else {
+                logger?.warning("[EncapsulatedParser] Item length \(itemLen) out of bounds at \(cursor)")
+                break
+            }
+            // Skip zero-length items (padding)
+            if itemLen > 0 {
+                result.append((offset: cursor, length: itemLen))
+            }
+            cursor += itemLen
+        }
+
+        guard !result.isEmpty else {
+            logger?.warning("[EncapsulatedParser] Linear scan found no frame items")
+            return nil
+        }
+        logger?.debug("[EncapsulatedParser] Linear-scan path: \(result.count) frames")
+        return result
+    }
+
+    /// Extracts the raw compressed bytes for a specific frame from a
+    /// pre-built offset table produced by `parseEncapsulatedFrameOffsets()`.
+    ///
+    /// - Parameters:
+    ///   - data:         Full DICOM file data.
+    ///   - frameIndex:   Zero-based frame index.
+    ///   - frameOffsets: Offset table from `parseEncapsulatedFrameOffsets()`.
+    ///   - logger:       Optional diagnostic logger.
+    /// - Returns: The raw compressed frame bytes, or `nil` on failure.
+    internal static func extractEncapsulatedFrame(
+        data: Data,
+        frameIndex: Int,
+        frameOffsets: [(offset: Int, length: Int)],
+        logger: AnyLogger? = nil
+    ) -> Data? {
+        guard frameIndex >= 0, frameIndex < frameOffsets.count else {
+            logger?.warning("[EncapsulatedExtract] frameIndex \(frameIndex) out of range (\(frameOffsets.count) frames)")
+            return nil
+        }
+        let entry = frameOffsets[frameIndex]
+        guard entry.offset >= 0,
+              entry.length > 0,
+              entry.offset + entry.length <= data.count else {
+            logger?.warning("[EncapsulatedExtract] Frame \(frameIndex) byte range invalid: offset=\(entry.offset) length=\(entry.length)")
+            return nil
+        }
+        return data[entry.offset ..< entry.offset + entry.length]
+    }
+
+    /// Decodes a single compressed frame from the DICOM pixel data sequence.
+    ///
+    /// Accepts an explicit `frameIndex` for multi-frame support and a
+    /// pre-parsed `frameOffsets` table.  Supports RLE Lossless natively;
+    /// all other syntaxes fall back to `ImageIO` (JPEG, JPEG 2000, JPEG-LS).
+    ///
+    /// - Parameters:
+    ///   - data:                    Full DICOM file data.
+    ///   - offset:                  Byte position of the encapsulated sequence.
+    ///   - transferSyntaxUID:       Transfer syntax UID string.
+    ///   - frameIndex:              Zero-based frame index to decode.
+    ///   - frameOffsets:            Pre-parsed offset table (pass nil to auto-parse).
+    ///   - width:                   Expected frame width (needed for RLE).
+    ///   - height:                  Expected frame height (needed for RLE).
+    ///   - bitsAllocated:           Bits per sample (needed for RLE).
+    ///   - samplesPerPixel:         Samples per pixel (needed for RLE).
+    ///   - numberOfFrames:          Total frame count declared in the header.
+    ///   - pixelRepresentation:     0 unsigned, 1 signed.
+    ///   - photometricInterpretation: Photometric interpretation string.
+    ///   - logger:                  Optional diagnostic logger.
+    /// - Returns: Decoded result, or `nil` on failure.
     internal static func decodeCompressedPixelData(
         data: Data,
         offset: Int,
         transferSyntaxUID: String,
+        frameIndex: Int = 0,
+        frameOffsets: [(offset: Int, length: Int)]? = nil,
+        width: Int = 0,
+        height: Int = 0,
+        bitsAllocated: Int = 16,
+        samplesPerPixel: Int = 1,
         numberOfFrames: Int,
         pixelRepresentation: Int,
         photometricInterpretation: String,
         logger: AnyLogger? = nil
     ) -> DCMPixelReadResult? {
-        guard let compressedData = extractEncapsulatedSingleFrame(
+
+        // --- Build or reuse the offset table ------------------------------------
+        let table: [(offset: Int, length: Int)]
+        if let provided = frameOffsets {
+            table = provided
+        } else if let parsed = parseEncapsulatedFrameOffsets(data: data, offset: offset, logger: logger) {
+            table = parsed
+        } else {
+            // Could not parse the BOT/items: fall back to legacy single-frame extractor
+            guard let compressedData = extractEncapsulatedSingleFrame(
+                data: data,
+                offset: offset,
+                numberOfFrames: numberOfFrames,
+                transferSyntaxUID: transferSyntaxUID,
+                logger: logger
+            ) else {
+                return nil
+            }
+            return decodeCompressedBytes(
+                compressedData,
+                transferSyntaxUID: transferSyntaxUID,
+                width: width, height: height,
+                bitsAllocated: bitsAllocated,
+                samplesPerPixel: samplesPerPixel,
+                pixelRepresentation: pixelRepresentation,
+                photometricInterpretation: photometricInterpretation,
+                logger: logger
+            )
+        }
+
+        // --- Extract the target frame from the offset table ---------------------
+        guard let compressedData = extractEncapsulatedFrame(
             data: data,
-            offset: offset,
-            numberOfFrames: numberOfFrames,
-            transferSyntaxUID: transferSyntaxUID,
+            frameIndex: frameIndex,
+            frameOffsets: table,
             logger: logger
         ) else {
             return nil
         }
 
-        // Check if this is JPEG Lossless format (SOF3 marker 0xFFC3)
-        // JPEG files start with SOI marker 0xFFD8
+        return decodeCompressedBytes(
+            compressedData,
+            transferSyntaxUID: transferSyntaxUID,
+            width: width, height: height,
+            bitsAllocated: bitsAllocated,
+            samplesPerPixel: samplesPerPixel,
+            pixelRepresentation: pixelRepresentation,
+            photometricInterpretation: photometricInterpretation,
+            logger: logger
+        )
+    }
+
+    /// Decodes a raw compressed byte blob into a `DCMPixelReadResult`.
+    /// Handles RLE natively; all other syntaxes go through the ImageIO pipeline.
+    private static func decodeCompressedBytes(
+        _ compressedData: Data,
+        transferSyntaxUID: String,
+        width: Int,
+        height: Int,
+        bitsAllocated: Int,
+        samplesPerPixel: Int,
+        pixelRepresentation: Int,
+        photometricInterpretation: String,
+        logger: AnyLogger? = nil
+    ) -> DCMPixelReadResult? {
+
+        // --- RLE Lossless path --------------------------------------------------
+        if DicomTransferSyntax.rleLossless.matches(transferSyntaxUID) {
+            guard let rawData = RLEDecoder.decode(
+                data: compressedData,
+                width: width,
+                height: height,
+                bitsAllocated: bitsAllocated,
+                samplesPerPixel: samplesPerPixel,
+                logger: logger
+            ) else {
+                logger?.warning("[Compressed] RLE decode failed")
+                return nil
+            }
+            // Feed the decompressed bytes through the standard uncompressed reader
+            return readPixels(
+                data: rawData,
+                width: width,
+                height: height,
+                bitDepth: bitsAllocated,
+                samplesPerPixel: samplesPerPixel,
+                offset: 0,
+                pixelRepresentation: pixelRepresentation,
+                littleEndian: true,   // RLEDecoder always outputs little-endian
+                photometricInterpretation: photometricInterpretation,
+                logger: logger
+            )
+        }
+
+        // --- JPEG Lossless path -------------------------------------------------
         if compressedData.count >= 2,
-           compressedData[0] == 0xFF,
-           compressedData[1] == 0xD8 {
-            // This is a JPEG file, check for JPEG Lossless (SOF3) marker
+           compressedData[compressedData.startIndex] == 0xFF,
+           compressedData[compressedData.index(after: compressedData.startIndex)] == 0xD8 {
             if isJPEGLossless(data: compressedData) {
-                // JPEG Lossless detected - use dedicated decoder
                 let decoder = JPEGLosslessDecoder()
                 do {
                     let losslessResult = try decoder.decode(data: compressedData)
-
-                    // Convert JPEGLosslessDecodeResult to DCMPixelReadResult
-                    let result = DCMPixelReadResult(
+                    return DCMPixelReadResult(
                         pixels8: nil,
                         pixels16: losslessResult.pixels,
                         pixels24: nil,
@@ -884,7 +1130,6 @@ internal final class DCMPixelReader {
                         bitDepth: losslessResult.bitDepth,
                         samplesPerPixel: 1
                     )
-                    return result
                 } catch {
                     logger?.warning("JPEG Lossless decoding failed: \(error)")
                     return nil
@@ -892,74 +1137,54 @@ internal final class DCMPixelReader {
             }
         }
 
-        // Create an image source from the compressed data.  ImageIO
-        // automatically detects JPEG, JPEG2000 and JPEG‑LS formats.
+        // --- ImageIO fallback (JPEG Baseline, JPEG 2000, JPEG‑LS) ---------------
         guard let source = CGImageSourceCreateWithData(compressedData as CFData, nil) else {
             logger?.warning("Failed to create image source from compressed data for transfer syntax \(transferSyntaxUID)")
             return nil
         }
-
-        // Decode the first image in the source.
         guard let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else {
             logger?.warning("Failed to decode image from source for transfer syntax \(transferSyntaxUID)")
             return nil
         }
 
-        // Retrieve dimensions
-        let width = cgImage.width
-        let height = cgImage.height
-        let bitDepth = cgImage.bitsPerComponent
-
-        // Determine number of colour samples.  bitsPerPixel may
-        // include alpha; we compute based on bitsPerPixel and
-        // bitsPerComponent.
+        let decodedWidth  = cgImage.width
+        let decodedHeight = cgImage.height
+        let decodedBitDepth = cgImage.bitsPerComponent
         let samples = max(1, cgImage.bitsPerPixel / cgImage.bitsPerComponent)
-        let samplesPerPixel = samples >= 3 ? 3 : 1
+        let decodedSPP = samples >= 3 ? 3 : 1
 
         var result = DCMPixelReadResult(
             pixels8: nil,
             pixels16: nil,
             pixels24: nil,
             signedImage: false,
-            width: width,
-            height: height,
-            bitDepth: bitDepth,
-            samplesPerPixel: samplesPerPixel
+            width: decodedWidth,
+            height: decodedHeight,
+            bitDepth: decodedBitDepth,
+            samplesPerPixel: decodedSPP
         )
 
-        // Prepare a context to extract the pixel data.  For colour
-        // images we render into a BGRA 32‑bit buffer; for grayscale
-        // we render into an 8‑bit buffer.
-        if samplesPerPixel == 1 {
-            let count = width * height
-
-            if bitDepth > 8 {
+        if decodedSPP == 1 {
+            let count = decodedWidth * decodedHeight
+            if decodedBitDepth > 8 {
                 let colorSpace = CGColorSpaceCreateDeviceGray()
-                let bytesPerRow = width * MemoryLayout<UInt16>.size
+                let bytesPerRow = decodedWidth * MemoryLayout<UInt16>.size
                 let bitmapInfo = CGImageAlphaInfo.none.rawValue | CGBitmapInfo.byteOrder16Little.rawValue
                 guard let ctx = CGContext(data: nil,
-                                          width: width,
-                                          height: height,
-                                          bitsPerComponent: 16,
-                                          bytesPerRow: bytesPerRow,
-                                          space: colorSpace,
-                                          bitmapInfo: bitmapInfo) else {
-                    logger?.warning("Failed to create 16-bit grayscale context for transfer syntax \(transferSyntaxUID)")
+                                          width: decodedWidth, height: decodedHeight,
+                                          bitsPerComponent: 16, bytesPerRow: bytesPerRow,
+                                          space: colorSpace, bitmapInfo: bitmapInfo) else {
+                    logger?.warning("Failed to create 16-bit grayscale context")
                     return nil
                 }
-                ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-                guard let dataPtr = ctx.data else {
-                    logger?.warning("Failed to get 16-bit context data pointer")
-                    return nil
-                }
-
+                ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: decodedWidth, height: decodedHeight))
+                guard let dataPtr = ctx.data else { return nil }
                 let buffer = dataPtr.assumingMemoryBound(to: UInt16.self)
                 var pixels = [UInt16](UnsafeBufferPointer(start: buffer, count: count))
                 if pixelRepresentation == 1 {
-                    pixels = pixels.map { value in
-                        let signed = Int16(bitPattern: value)
-                        let shifted = Int(signed) - min16
-                        return UInt16(truncatingIfNeeded: shifted)
+                    pixels = pixels.map { v in
+                        let s = Int16(bitPattern: v)
+                        return UInt16(truncatingIfNeeded: Int(s) - min16)
                     }
                     result.signedImage = true
                 }
@@ -969,24 +1194,17 @@ internal final class DCMPixelReader {
                 result.pixels16 = pixels
                 result.bitDepth = 16
             } else {
-                // Grayscale output
                 let colorSpace = CGColorSpaceCreateDeviceGray()
-                let bytesPerRow = width
                 guard let ctx = CGContext(data: nil,
-                                          width: width,
-                                          height: height,
-                                          bitsPerComponent: 8,
-                                          bytesPerRow: bytesPerRow,
+                                          width: decodedWidth, height: decodedHeight,
+                                          bitsPerComponent: 8, bytesPerRow: decodedWidth,
                                           space: colorSpace,
                                           bitmapInfo: CGImageAlphaInfo.none.rawValue) else {
-                    logger?.warning("Failed to create grayscale context for transfer syntax \(transferSyntaxUID)")
+                    logger?.warning("Failed to create 8-bit grayscale context")
                     return nil
                 }
-                ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-                guard let dataPtr = ctx.data else {
-                    logger?.warning("Failed to get 8-bit context data pointer")
-                    return nil
-                }
+                ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: decodedWidth, height: decodedHeight))
+                guard let dataPtr = ctx.data else { return nil }
                 let buffer = dataPtr.assumingMemoryBound(to: UInt8.self)
                 var pixels = [UInt8](UnsafeBufferPointer(start: buffer, count: count))
                 if photometricInterpretation == "MONOCHROME1" {
@@ -996,41 +1214,26 @@ internal final class DCMPixelReader {
                 result.bitDepth = 8
             }
         } else {
-            // Colour output.  Render into BGRA and then strip alpha.
             let colorSpace = CGColorSpaceCreateDeviceRGB()
-            let bytesPerPixel = 4
-            let bytesPerRow = width * bytesPerPixel
+            let bytesPerRow = decodedWidth * 4
             let bitmapInfo = CGImageAlphaInfo.noneSkipLast.rawValue
             guard let ctx = CGContext(data: nil,
-                                      width: width,
-                                      height: height,
-                                      bitsPerComponent: 8,
-                                      bytesPerRow: bytesPerRow,
-                                      space: colorSpace,
-                                      bitmapInfo: bitmapInfo) else {
+                                      width: decodedWidth, height: decodedHeight,
+                                      bitsPerComponent: 8, bytesPerRow: bytesPerRow,
+                                      space: colorSpace, bitmapInfo: bitmapInfo) else {
                 logger?.warning("Failed to create RGB context")
                 return nil
             }
-            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
-            guard let dataPtr = ctx.data else {
-                logger?.warning("Failed to get context data pointer")
-                return nil
-            }
+            ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: decodedWidth, height: decodedHeight))
+            guard let dataPtr = ctx.data else { return nil }
             let rawBuffer = dataPtr.assumingMemoryBound(to: UInt8.self)
-            let count = width * height
-            // Allocate pixel24 and fill with RGB triples (BGR in
-            // little endian).  We omit the alpha channel.
+            let count = decodedWidth * decodedHeight
             var output = [UInt8](repeating: 0, count: count * 3)
             for i in 0..<count {
-                let srcIndex = i * 4
-                let dstIndex = i * 3
-                // CGImage in little endian stores bytes as BGRA
-                let blue  = rawBuffer[srcIndex]
-                let green = rawBuffer[srcIndex + 1]
-                let red   = rawBuffer[srcIndex + 2]
-                output[dstIndex]     = blue
-                output[dstIndex + 1] = green
-                output[dstIndex + 2] = red
+                // CGImage little endian BGRA → RGB output
+                output[i * 3]     = rawBuffer[i * 4 + 2]  // R
+                output[i * 3 + 1] = rawBuffer[i * 4 + 1]  // G
+                output[i * 3 + 2] = rawBuffer[i * 4]      // B
             }
             result.pixels24 = output
         }
@@ -1082,7 +1285,68 @@ internal final class DCMPixelReader {
         return false
     }
 
+    // MARK: - Uncompressed Frame Access
+
+    /// Reads pixel data for a specific frame index from an uncompressed
+    /// multi-frame DICOM buffer.
+    ///
+    /// - Parameters:
+    ///   - data:           Full DICOM file data.
+    ///   - frameIndex:     Zero-based frame index.
+    ///   - width:          Frame width in pixels.
+    ///   - height:         Frame height in pixels.
+    ///   - bitDepth:       Bits per sample (8 or 16).
+    ///   - samplesPerPixel: Samples per pixel (1 or 3).
+    ///   - baseOffset:     Byte offset to the start of all pixel data.
+    ///   - pixelRepresentation: 0 unsigned, 1 signed.
+    ///   - littleEndian:   Byte order flag.
+    ///   - photometricInterpretation: Photometric interpretation string.
+    ///   - logger:         Optional diagnostic logger.
+    /// - Returns: Decoded result for the requested frame, or `nil` on failure.
+    internal static func readPixelsForFrame(
+        data: Data,
+        frameIndex: Int,
+        width: Int,
+        height: Int,
+        bitDepth: Int,
+        samplesPerPixel: Int,
+        baseOffset: Int,
+        pixelRepresentation: Int,
+        littleEndian: Bool,
+        photometricInterpretation: String,
+        logger: AnyLogger? = nil
+    ) -> DCMPixelReadResult? {
+        let bytesPerSample = max(1, bitDepth / 8)
+        let frameByteSize = width * height * samplesPerPixel * bytesPerSample
+        guard frameByteSize > 0 else {
+            logger?.warning("[readPixelsForFrame] Zero frame byte size (w=\(width) h=\(height) spp=\(samplesPerPixel) bps=\(bytesPerSample))")
+            return nil
+        }
+        let frameOffset = baseOffset + frameIndex * frameByteSize
+        guard frameOffset >= 0, frameOffset + frameByteSize <= data.count else {
+            logger?.warning("[readPixelsForFrame] Frame \(frameIndex) byte range [\(frameOffset), \(frameOffset + frameByteSize)) exceeds data (\(data.count) bytes)")
+            return nil
+        }
+        var result = readPixels(
+            data: data,
+            width: width,
+            height: height,
+            bitDepth: bitDepth,
+            samplesPerPixel: samplesPerPixel,
+            offset: frameOffset,
+            pixelRepresentation: pixelRepresentation,
+            littleEndian: littleEndian,
+            photometricInterpretation: photometricInterpretation,
+            logger: logger
+        )
+        return result
+    }
+
+    // MARK: - Legacy Single-Frame Extraction (backward-compatible wrapper)
+
     /// Extracts a single-frame encapsulated codestream from DICOM pixel data.
+    /// - Note: This is kept as a backward-compatible wrapper. New callers should
+    ///         use `parseEncapsulatedFrameOffsets()` + `extractEncapsulatedFrame(at:)`.
     internal static func extractEncapsulatedSingleFrame(
         data: Data,
         offset: Int,

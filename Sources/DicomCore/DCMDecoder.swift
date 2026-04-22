@@ -210,6 +210,26 @@ public final class DCMDecoder: DicomDecoderProtocol {
     /// Number of frames in a multi‑frame image.  Defaults to 1.
     public private(set) var nImages: Int = 1
 
+    // MARK: - Temporal / Cine State (Phase 1)
+
+    /// Byte offsets to the start of each frame's pixel data (uncompressed)
+    /// or precomputed from the encapsulated frame offset table (compressed).
+    /// Populated after successful decoding in `setDicomFilename(_:)`.
+    private var frameByteOffsets: [Int] = []
+
+    /// Pre-parsed encapsulated frame offset table for compressed multi-frame files.
+    /// Avoids re-scanning the encapsulated sequence on every `getPixels*(frame:)` call.
+    private var encapsulatedFrameTable: [(offset: Int, length: Int)]? = nil
+
+    /// Nominal time between frames in milliseconds (tag 0018,1063).
+    public private(set) var frameTime: Double = 0.0
+
+    /// Per-frame time vector for variable-rate loops (tag 0018,1065).
+    public private(set) var frameTimeVector: [Double] = []
+
+    /// Cine rate in frames per second (tag 0018,0040).
+    public private(set) var cineRate: Double = 0.0
+
     /// Number of samples per pixel.  1 for grayscale, 3 for RGB.  If
     /// other values are encountered the decoder will still parse the
     /// metadata but the pixel data may not be interpretable by
@@ -379,6 +399,11 @@ public final class DCMDecoder: DicomDecoderProtocol {
             windowWidth = 0
             dicomInfoDict.removeAll()
             cachedInfo.removeAll()
+            frameByteOffsets = []
+            encapsulatedFrameTable = nil
+            frameTime = 0.0
+            frameTimeVector = []
+            cineRate = 0.0
             // Initialize binary reader with little endian by default
             reader = DCMBinaryReader(data: dicomData, littleEndian: true)
             // Initialize tag parser
@@ -391,9 +416,21 @@ public final class DCMDecoder: DicomDecoderProtocol {
                 if !compressedImage {
                     readPixelsUnsafe()
                     dicomFileReadSuccess = pixels8 != nil || pixels16 != nil || pixels24 != nil
+                    // Build uncompressed frame offset table after pixel decoding
+                    if dicomFileReadSuccess && nImages > 1 {
+                        buildUncompressedFrameOffsets()
+                    }
                 } else {
                     decodeCompressedPixelDataUnsafe()
                     dicomFileReadSuccess = pixels8 != nil || pixels16 != nil || pixels24 != nil
+                    // Build compressed frame offset table for on-demand frame access
+                    if dicomFileReadSuccess && nImages > 1 {
+                        encapsulatedFrameTable = DCMPixelReader.parseEncapsulatedFrameOffsets(
+                            data: dicomData,
+                            offset: offset,
+                            logger: logger
+                        )
+                    }
                 }
             } else {
                 dicomFileReadSuccess = false
@@ -987,6 +1024,23 @@ public final class DCMDecoder: DicomDecoderProtocol {
                 if let frames = Double(s), frames > 1.0 {
                     nImages = Int(frames)
                 }
+            // MARK: - Temporal / Cine Tags
+            case Tag.cineRate.rawValue:
+                let elementLength = tagParser?.currentElementLength ?? 0
+                let s = reader.readString(length: elementLength, location: &location)
+                cineRate = Double(s) ?? 0.0
+                addInfo(tag: tag, stringValue: s)
+            case Tag.frameTime.rawValue:
+                let elementLength = tagParser?.currentElementLength ?? 0
+                let s = reader.readString(length: elementLength, location: &location)
+                frameTime = Double(s) ?? 0.0
+                addInfo(tag: tag, stringValue: s)
+            case Tag.frameTimeVector.rawValue:
+                let elementLength = tagParser?.currentElementLength ?? 0
+                let s = reader.readString(length: elementLength, location: &location)
+                addInfo(tag: tag, stringValue: s)
+                // Parse backslash-separated doubles (e.g. "33.3\33.3\40.0")
+                frameTimeVector = s.split(separator: "\\").compactMap { Double($0) }
             case Tag.samplesPerPixel.rawValue:
                 let spp = Int(reader.readShort(location: &location))
                 samplesPerPixel = spp
@@ -1209,11 +1263,17 @@ public final class DCMDecoder: DicomDecoderProtocol {
             offset = locatedOffset
         }
 
-        // Use DCMPixelReader to decode compressed pixel data
+        // Use DCMPixelReader to decode compressed pixel data (frame 0 for initial load)
         guard let result = DCMPixelReader.decodeCompressedPixelData(
             data: dicomData,
             offset: offset,
             transferSyntaxUID: transferSyntaxUID,
+            frameIndex: 0,
+            frameOffsets: nil,   // will be built after this call in setDicomFilename
+            width: width,
+            height: height,
+            bitsAllocated: bitDepth,
+            samplesPerPixel: samplesPerPixel,
             numberOfFrames: nImages,
             pixelRepresentation: pixelRepresentation,
             photometricInterpretation: photometricInterpretation,
@@ -1266,6 +1326,209 @@ public final class DCMDecoder: DicomDecoderProtocol {
             return start + 12
         default:
             return start + 8
+        }
+    }
+
+    // MARK: - Uncompressed Frame Offset Table
+
+    /// Precomputes frame byte offsets for uncompressed multi-frame images.
+    /// After calling this, `frameByteOffsets[i]` holds the absolute byte
+    /// offset into `dicomData` for frame `i`.
+    private func buildUncompressedFrameOffsets() {
+        let bytesPerSample = max(1, bitDepth / 8)
+        let frameByteSize = width * height * samplesPerPixel * bytesPerSample
+        guard frameByteSize > 0, nImages > 0 else { return }
+        frameByteOffsets = (0..<nImages).map { offset + $0 * frameByteSize }
+    }
+}
+
+// MARK: - Cine / MultiFrame Extension
+
+extension DCMDecoder {
+
+    // MARK: - Temporal Properties
+
+    /// Derived playback frame rate in frames per second.
+    ///
+    /// Resolution order:
+    /// 1. `cineRate` (tag 0018,0040) if > 0
+    /// 2. `1000.0 / frameTime` (tag 0018,1063) if frameTime > 0
+    /// 3. 30.0 — safe default for ultrasound
+    public var derivedFrameRate: Double {
+        if cineRate > 0 { return cineRate }
+        if frameTime > 0 { return 1000.0 / frameTime }
+        return 30.0
+    }
+
+    /// Total number of frames.  Alias for `nImages` for clarity in cine contexts.
+    public var numberOfFrames: Int {
+        return nImages
+    }
+
+    // MARK: - Frame-Indexed Pixel Access
+
+    /// Returns the 8-bit grayscale pixel buffer for the given zero-based frame index.
+    ///
+    /// - For single-frame images (`nImages == 1`), equivalent to `getPixels8()`.
+    /// - For uncompressed multi-frame images, uses the precomputed byte offset table.
+    /// - For compressed multi-frame images, decodes the requested frame on demand.
+    ///
+    /// Returns `nil` if the image is not 8-bit grayscale, the frame index is out of
+    /// range, or decoding fails.
+    public func getPixels8(frame: Int) -> [UInt8]? {
+        return synchronized {
+            guard dicomFileReadSuccess else { return nil }
+            guard bitDepth == 8, samplesPerPixel == 1 else { return nil }
+            guard frame >= 0, frame < nImages else { return nil }
+
+            if nImages == 1 {
+                if pixels8 == nil { readPixelsUnsafe() }
+                return pixels8
+            }
+
+            if !compressedImage {
+                // Uncompressed: use precomputed byte offsets
+                let frameOffset = frameByteOffsets.indices.contains(frame)
+                    ? frameByteOffsets[frame]
+                    : offset + frame * width * height
+                let result = DCMPixelReader.readPixels(
+                    data: dicomData,
+                    width: width, height: height,
+                    bitDepth: bitDepth, samplesPerPixel: samplesPerPixel,
+                    offset: frameOffset,
+                    pixelRepresentation: pixelRepresentation,
+                    littleEndian: littleEndian,
+                    photometricInterpretation: photometricInterpretation,
+                    logger: logger
+                )
+                return result.pixels8
+            } else {
+                // Compressed: decode requested frame using cached offset table
+                guard let result = DCMPixelReader.decodeCompressedPixelData(
+                    data: dicomData,
+                    offset: offset,
+                    transferSyntaxUID: transferSyntaxUID,
+                    frameIndex: frame,
+                    frameOffsets: encapsulatedFrameTable,
+                    width: width, height: height,
+                    bitsAllocated: bitDepth,
+                    samplesPerPixel: samplesPerPixel,
+                    numberOfFrames: nImages,
+                    pixelRepresentation: pixelRepresentation,
+                    photometricInterpretation: photometricInterpretation,
+                    logger: logger
+                ) else { return nil }
+                return result.pixels8
+            }
+        }
+    }
+
+    /// Returns the 16-bit grayscale pixel buffer for the given zero-based frame index.
+    ///
+    /// - For single-frame images (`nImages == 1`), equivalent to `getPixels16()`.
+    /// - For uncompressed multi-frame images, uses the precomputed byte offset table.
+    /// - For compressed multi-frame images, decodes the requested frame on demand.
+    ///
+    /// Returns `nil` if the image is not 16-bit grayscale, the frame index is out of
+    /// range, or decoding fails.
+    public func getPixels16(frame: Int) -> [UInt16]? {
+        return synchronized {
+            guard dicomFileReadSuccess else { return nil }
+            guard bitDepth == 16, samplesPerPixel == 1 else { return nil }
+            guard frame >= 0, frame < nImages else { return nil }
+
+            if nImages == 1 {
+                if pixels16 == nil { readPixelsUnsafe() }
+                return pixels16
+            }
+
+            if !compressedImage {
+                let frameOffset = frameByteOffsets.indices.contains(frame)
+                    ? frameByteOffsets[frame]
+                    : offset + frame * width * height * 2
+                let result = DCMPixelReader.readPixels(
+                    data: dicomData,
+                    width: width, height: height,
+                    bitDepth: bitDepth, samplesPerPixel: samplesPerPixel,
+                    offset: frameOffset,
+                    pixelRepresentation: pixelRepresentation,
+                    littleEndian: littleEndian,
+                    photometricInterpretation: photometricInterpretation,
+                    logger: logger
+                )
+                return result.pixels16
+            } else {
+                guard let result = DCMPixelReader.decodeCompressedPixelData(
+                    data: dicomData,
+                    offset: offset,
+                    transferSyntaxUID: transferSyntaxUID,
+                    frameIndex: frame,
+                    frameOffsets: encapsulatedFrameTable,
+                    width: width, height: height,
+                    bitsAllocated: bitDepth,
+                    samplesPerPixel: samplesPerPixel,
+                    numberOfFrames: nImages,
+                    pixelRepresentation: pixelRepresentation,
+                    photometricInterpretation: photometricInterpretation,
+                    logger: logger
+                ) else { return nil }
+                return result.pixels16
+            }
+        }
+    }
+
+    /// Returns the 24-bit interleaved RGB pixel buffer for the given zero-based frame index.
+    ///
+    /// - For single-frame images (`nImages == 1`), equivalent to `getPixels24()`.
+    /// - For uncompressed multi-frame images, uses the precomputed byte offset table.
+    /// - For compressed multi-frame images, decodes the requested frame on demand.
+    ///
+    /// Returns `nil` if the image is not 24-bit RGB, the frame index is out of
+    /// range, or decoding fails.
+    public func getPixels24(frame: Int) -> [UInt8]? {
+        return synchronized {
+            guard dicomFileReadSuccess else { return nil }
+            guard samplesPerPixel == 3 else { return nil }
+            guard frame >= 0, frame < nImages else { return nil }
+
+            if nImages == 1 {
+                if pixels24 == nil { readPixelsUnsafe() }
+                return pixels24
+            }
+
+            if !compressedImage {
+                let bytesPerPixel = (bitDepth / 8) * samplesPerPixel
+                let frameOffset = frameByteOffsets.indices.contains(frame)
+                    ? frameByteOffsets[frame]
+                    : offset + frame * width * height * bytesPerPixel
+                let result = DCMPixelReader.readPixels(
+                    data: dicomData,
+                    width: width, height: height,
+                    bitDepth: bitDepth, samplesPerPixel: samplesPerPixel,
+                    offset: frameOffset,
+                    pixelRepresentation: pixelRepresentation,
+                    littleEndian: littleEndian,
+                    photometricInterpretation: photometricInterpretation,
+                    logger: logger
+                )
+                return result.pixels24
+            } else {
+                guard let result = DCMPixelReader.decodeCompressedPixelData(
+                    data: dicomData,
+                    offset: offset,
+                    transferSyntaxUID: transferSyntaxUID,
+                    frameIndex: frame,
+                    frameOffsets: encapsulatedFrameTable,
+                    width: width, height: height,
+                    bitsAllocated: bitDepth,
+                    samplesPerPixel: samplesPerPixel,
+                    numberOfFrames: nImages,
+                    pixelRepresentation: pixelRepresentation,
+                    photometricInterpretation: photometricInterpretation,
+                    logger: logger
+                ) else { return nil }
+                return result.pixels24
+            }
         }
     }
 }
