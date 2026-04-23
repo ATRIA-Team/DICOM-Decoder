@@ -79,6 +79,13 @@ DICOM (Digital Imaging and Communications in Medicine) is the standard for medic
 - Validates single-channel 16-bit geometry consistency and assembles a contiguous volume buffer (signed/unsigned preserved).
 - Progress callback per slice and lightweight `DicomSeriesVolume` with voxels, spacing, orientation matrix, origin, rescale parameters, and description.
 
+### Cine-Echocardiography Playback (new)
+
+- Native parsing of multi-frame encapsulated DICOM sequences, utilizing accelerated Frame-Indexed extraction.
+- Automatic detection and application of temporal metadata (cineRate, frameTime).
+- RLE Lossless (Transfer Syntax `1.2.840.10008.1.2.5`) custom swift decoder.
+- High-performance playback views in `DicomSwiftUI` using VSync synchronized timers (`CineTimer`) and memory cached rendering layers (`LRUCache`).
+
 ### Image Processing
 
 - Window/Level with medical presets (CT, mammography, PET, and more)

@@ -2271,4 +2271,89 @@ struct ProcessedImage {
 
 ---
 
+## Cine-Echocardiography Playback
+
+The library now provides full support for interpreting and playing multi-frame sequences (Cine-Echocardiography) with hardware-synchronized timing and native Swift UI controls.
+
+### 1. The Playback View (Recommended)
+`CinePlayerView` is a complete out-of-the-box SwiftUI view providing a scrubbable timeline, transport controls, and an FPS indicator.
+
+```swift
+import SwiftUI
+import DicomCore
+import DicomSwiftUI
+
+struct EchocardiogramViewer: View {
+    @State private var cineViewModel: CinePlayerViewModel?
+    @State private var loadError: Error?
+    @State private var isLoading = true
+    
+    let dicomURL: URL
+    
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            if let viewModel = cineViewModel {
+                // Drop in the player view
+                CinePlayerView(viewModel: viewModel)
+            } else if isLoading {
+                ProgressView("Analyzing Echo Sequence...")
+                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+            } else if let loadError = loadError {
+                Text(loadError.localizedDescription).foregroundColor(.red)
+            }
+        }
+        .task {
+            await loadEchocardiogram()
+        }
+    }
+    
+    private func loadEchocardiogram() async {
+        do {
+            // 1. Initialise the async decoder 
+            let decoder = try await DCMDecoder(contentsOf: dicomURL)
+            
+            // 2. Validate it's a multi-frame echo loop
+            guard decoder.numberOfFrames > 1 else {
+                throw NSError(domain: "EchoViewer", code: 1, userInfo: [NSLocalizedDescriptionKey: "DICOM file has only 1 frame. Use standard DicomImageView."])
+            }
+            
+            await MainActor.run {
+                // 3. Assemble the Playback state-machine
+                self.cineViewModel = CinePlayerViewModel(decoder: decoder)
+                self.isLoading = false
+            }
+            
+        } catch {
+            await MainActor.run {
+                self.loadError = error
+                self.isLoading = false
+            }
+        }
+    }
+}
+```
+
+### 2. Manual Frame-Indexed Extraction
+If you are building your own engine, you can access discrete frames asynchronously without loading everything into memory.
+```swift
+import DicomCore
+
+func exportFrames(url: URL) async throws {
+    let decoder = try await DCMDecoder(contentsOf: url)
+    
+    print("Detected \(decoder.numberOfFrames) frames at \(decoder.derivedFrameRate) FPS")
+    
+    for frameIndex in 0..<decoder.numberOfFrames {
+        // High-performance selective extraction
+        if let pixels16 = decoder.getPixels16(frame: frameIndex) {
+            print("Extracted frame \(frameIndex)")
+        }
+    }
+}
+```
+
+---
+
 For more information, see the main [README.md](README.md) and inline code documentation.
