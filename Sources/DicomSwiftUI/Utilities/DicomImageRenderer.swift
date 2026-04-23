@@ -353,7 +353,7 @@ public enum DicomImageRenderer {
         }
 
         // Apply windowing transformation
-        guard let pixels8Data = DCMWindowingProcessor.applyWindowLevel(
+        guard let pixels8Data = DCMWindowingProcessor.applyWindowLevelV2(
             pixels16: pixels16,
             center: windowSettings.center,
             width: windowSettings.width,

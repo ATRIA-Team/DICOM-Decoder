@@ -5,7 +5,7 @@ let package = Package(
     name: "SwiftDICOMDecoder",
     defaultLocalization: "en",
     platforms: [
-        .iOS(.v13),
+        .iOS(.v15),
         .macOS(.v12),
         .visionOS(.v1)
     ],

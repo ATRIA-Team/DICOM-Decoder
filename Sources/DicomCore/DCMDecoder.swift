@@ -803,6 +803,21 @@ public final class DCMDecoder: DicomDecoderProtocol {
         return result
     }
 
+    /// Retrieves the value of a parsed header as a string using a type-safe DicomTag.
+    public func info(for tag: DicomTag) -> String {
+        return info(for: tag.rawValue)
+    }
+
+    /// Retrieves an integer value for a DICOM tag using a type-safe DicomTag.
+    public func intValue(for tag: DicomTag) -> Int? {
+        return intValue(for: tag.rawValue)
+    }
+
+    /// Retrieves a double value for a DICOM tag using a type-safe DicomTag.
+    public func doubleValue(for tag: DicomTag) -> Double? {
+        return doubleValue(for: tag.rawValue)
+    }
+
     /// Retrieves the value of a parsed header as a string, trimming
     /// any leading description up to the colon.  Returns an empty
     /// string if the tag was not found.
@@ -1628,14 +1643,29 @@ extension DCMDecoder {
         return (pixelWidth, pixelHeight, pixelDepth)
     }
 
+    /// V2: Returns pixel spacing as a type-safe struct
+    public var pixelSpacingV2: PixelSpacing {
+        return PixelSpacing(x: pixelWidth, y: pixelHeight, z: pixelDepth)
+    }
+
     /// Returns window settings as a tuple
     public var windowSettings: (center: Double, width: Double) {
         return (windowCenter, windowWidth)
     }
 
+    /// V2: Returns window settings as a type-safe struct
+    public var windowSettingsV2: WindowSettings {
+        return WindowSettings(center: windowCenter, width: windowWidth)
+    }
+
     /// Returns rescale parameters as a tuple
     public var rescaleParameters: (intercept: Double, slope: Double) {
         return (rescaleIntercept, rescaleSlope)
+    }
+
+    /// V2: Returns rescale parameters as a type-safe struct
+    public var rescaleParametersV2: RescaleParameters {
+        return RescaleParameters(intercept: rescaleIntercept, slope: rescaleSlope)
     }
 
     /// Applies rescale slope and intercept to a pixel value

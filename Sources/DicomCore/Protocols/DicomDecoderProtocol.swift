@@ -177,6 +177,15 @@ public protocol DicomDecoderProtocol: AnyObject {
 
     // MARK: - Metadata Access Methods
 
+    /// Retrieves the value of a parsed header as a string using a type-safe DicomTag.
+    func info(for tag: DicomTag) -> String
+
+    /// Retrieves an integer value for a DICOM tag using a type-safe DicomTag.
+    func intValue(for tag: DicomTag) -> Int?
+
+    /// Retrieves a double value for a DICOM tag using a type-safe DicomTag.
+    func doubleValue(for tag: DicomTag) -> Double?
+
     /// Retrieves the value of a parsed header as a string.
     /// Returns an empty string if the tag was not found.
     /// - Parameter tag: DICOM tag identifier (e.g., 0x00100010)
@@ -274,6 +283,17 @@ public protocol DicomDecoderProtocol: AnyObject {
 
     /// Returns rescale parameters as a tuple.
     var rescaleParameters: (intercept: Double, slope: Double) { get }
+
+    // MARK: - Type-Safe Value Properties (V2 APIs)
+
+    /// Returns pixel spacing as a type-safe struct.
+    var pixelSpacingV2: PixelSpacing { get }
+
+    /// Returns window settings as a type-safe struct.
+    var windowSettingsV2: WindowSettings { get }
+
+    /// Returns rescale parameters as a type-safe struct.
+    var rescaleParametersV2: RescaleParameters { get }
 
     // MARK: - Utility Methods
 

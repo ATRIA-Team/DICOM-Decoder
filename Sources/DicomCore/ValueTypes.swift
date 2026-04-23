@@ -298,3 +298,32 @@ public struct RescaleParameters: Codable, Equatable, Hashable, Sendable {
         return slope * storedValue + intercept
     }
 }
+
+// MARK: - Processing Mode
+
+/// Processing backend for window/level operations and other image processing tasks.
+///
+/// ## Overview
+///
+/// ``ProcessingMode`` defines the available computation backends for performance-intensive
+/// imaging tasks. It allows applications to choose between CPU and GPU acceleration or
+/// delegate the choice to the library's automatic selection logic.
+///
+/// **Available Modes:**
+/// - `.vdsp`: CPU-based processing using Apple's Accelerate framework. Highly reliable and consistent.
+/// - `.metal`: GPU-based processing using Metal compute shaders. Significantly faster for large images.
+/// - `.auto`: Automatic selection based on image size and hardware capabilities (default).
+///
+public enum ProcessingMode: String, Codable, CaseIterable, Sendable {
+    /// CPU-based processing using Accelerate (vDSP) framework.
+    /// Recommended for small images (< 800x800) or when GPU resources are constrained.
+    case vdsp
+    
+    /// GPU-based processing using Metal compute shaders.
+    /// Provides significant acceleration for large images (e.g., 1024x1024 or higher).
+    case metal
+    
+    /// Automatic selection based on image dimensions and device capabilities.
+    /// Selects Metal for large images and vDSP for smaller ones to minimize overhead.
+    case auto
+}

@@ -101,10 +101,19 @@ public final class MockDicomDecoderForPreviews: DicomDecoderProtocol, @unchecked
     public let dicomDir: Bool = false
     public let signedImage: Bool = false
     public let pixelRepresentationTagValue: Int = 0
+    public var dicomFileReadSuccess: Bool { return true }
 
     public var isSignedPixelRepresentation: Bool {
         return pixelRepresentationTagValue == 1
     }
+
+    // MARK: - Cine / Temporal Properties
+
+    public var frameTime: Double { return 33.33 } // 30 fps
+    public var frameTimeVector: [Double] { return [] }
+    public var cineRate: Double { return 30.0 }
+    public var derivedFrameRate: Double { return 30.0 }
+    public var numberOfFrames: Int { return nImages }
 
     // MARK: - Private Storage
 
@@ -313,6 +322,10 @@ public final class MockDicomDecoderForPreviews: DicomDecoderProtocol, @unchecked
         return (true, width, height, hasPixels, false)
     }
 
+    public func setDicomFilename(_ filename: String) {
+        // Mock implementation, no-op
+    }
+
     // MARK: - Pixel Data Access Methods
 
     public func getPixels8() -> [UInt8]? {
@@ -325,6 +338,22 @@ public final class MockDicomDecoderForPreviews: DicomDecoderProtocol, @unchecked
 
     public func getPixels24() -> [UInt8]? {
         return pixels24
+    }
+
+    public func getPixels8(frame: Int) -> [UInt8]? {
+        return frame == 0 ? pixels8 : nil
+    }
+
+    public func getPixels16(frame: Int) -> [UInt16]? {
+        return frame == 0 ? pixels16 : nil
+    }
+
+    public func getPixels24(frame: Int) -> [UInt8]? {
+        return frame == 0 ? pixels24 : nil
+    }
+
+    public func calculateOptimalWindow() -> (center: Double, width: Double)? {
+        return (windowCenter, windowWidth)
     }
 
     public func getDownsampledPixels16(maxDimension: Int) -> (pixels: [UInt16], width: Int, height: Int)? {
@@ -401,6 +430,18 @@ public final class MockDicomDecoderForPreviews: DicomDecoderProtocol, @unchecked
 
     // MARK: - Metadata Access Methods
 
+    public func info(for tag: DicomTag) -> String {
+        return info(for: tag.rawValue)
+    }
+
+    public func intValue(for tag: DicomTag) -> Int? {
+        return intValue(for: tag.rawValue)
+    }
+
+    public func doubleValue(for tag: DicomTag) -> Double? {
+        return doubleValue(for: tag.rawValue)
+    }
+
     public func info(for tag: Int) -> String {
         let hexTag = String(format: "%08X", tag)
         if let custom = customPatientName, hexTag == "00100010" {
@@ -469,6 +510,18 @@ public final class MockDicomDecoderForPreviews: DicomDecoderProtocol, @unchecked
 
     public var imageDimensions: (width: Int, height: Int) {
         return (width, height)
+    }
+
+    public var pixelSpacing: (width: Double, height: Double, depth: Double) {
+        return (pixelWidth, pixelHeight, pixelDepth)
+    }
+
+    public var windowSettings: (center: Double, width: Double) {
+        return (windowCenter, windowWidth)
+    }
+
+    public var rescaleParameters: (intercept: Double, slope: Double) {
+        return (0.0, 1.0)
     }
 
     // MARK: - Type-Safe Value Properties (V2 APIs)

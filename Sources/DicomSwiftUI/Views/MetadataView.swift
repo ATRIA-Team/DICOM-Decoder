@@ -290,25 +290,25 @@ public struct MetadataView: View {
 
             MetadataRow(
                 label: "Name",
-                value: decoder.info(for: .patientName),
+                value: decoder.info(for: DicomTag.patientName),
                 icon: "person.fill"
             )
 
             MetadataRow(
                 label: "Patient ID",
-                value: decoder.info(for: .patientID),
+                value: decoder.info(for: DicomTag.patientID),
                 icon: "number"
             )
 
             MetadataRow(
                 label: "Sex",
-                value: formatSex(decoder.info(for: .patientSex)),
+                value: formatSex(decoder.info(for: DicomTag.patientSex)),
                 icon: "person.crop.circle"
             )
 
             MetadataRow(
                 label: "Age",
-                value: decoder.info(for: .patientAge),
+                value: decoder.info(for: DicomTag.patientAge),
                 icon: "calendar"
             )
         }
@@ -327,37 +327,37 @@ public struct MetadataView: View {
 
             MetadataRow(
                 label: "Description",
-                value: decoder.info(for: .studyDescription),
+                value: decoder.info(for: DicomTag.studyDescription),
                 icon: "doc.text.fill"
             )
 
             MetadataRow(
                 label: "Study Date",
-                value: formatDate(decoder.info(for: .studyDate)),
+                value: formatDate(decoder.info(for: DicomTag.studyDate)),
                 icon: "calendar"
             )
 
             MetadataRow(
                 label: "Study Time",
-                value: formatTime(decoder.info(for: .studyTime)),
+                value: formatTime(decoder.info(for: DicomTag.studyTime)),
                 icon: "clock.fill"
             )
 
             MetadataRow(
                 label: "Study ID",
-                value: decoder.info(for: .studyID),
+                value: decoder.info(for: DicomTag.studyID),
                 icon: "number"
             )
 
             MetadataRow(
                 label: "Modality",
-                value: formatModality(decoder.info(for: .modality)),
+                value: formatModality(decoder.info(for: DicomTag.modality)),
                 icon: "cross.case.fill"
             )
 
             MetadataRow(
                 label: "Institution",
-                value: decoder.info(for: .institutionName),
+                value: decoder.info(for: DicomTag.institutionName),
                 icon: "building.2.fill"
             )
         }
@@ -376,25 +376,25 @@ public struct MetadataView: View {
 
             MetadataRow(
                 label: "Description",
-                value: decoder.info(for: .seriesDescription),
+                value: decoder.info(for: DicomTag.seriesDescription),
                 icon: "square.stack.3d.up.fill"
             )
 
             MetadataRow(
                 label: "Series Number",
-                value: decoder.info(for: .seriesNumber),
+                value: decoder.info(for: DicomTag.seriesNumber),
                 icon: "number"
             )
 
             MetadataRow(
                 label: "Instance Number",
-                value: decoder.info(for: .instanceNumber),
+                value: decoder.info(for: DicomTag.instanceNumber),
                 icon: "number.square.fill"
             )
 
             MetadataRow(
                 label: "Instances in Series",
-                value: decoder.info(for: .numberOfSeriesRelatedInstances),
+                value: decoder.info(for: DicomTag.numberOfSeriesRelatedInstances),
                 icon: "square.stack.fill"
             )
         }
@@ -425,19 +425,19 @@ public struct MetadataView: View {
 
             MetadataRow(
                 label: "Slice Thickness",
-                value: formatMeasurement(decoder.info(for: .sliceThickness), unit: "mm"),
+                value: formatMeasurement(decoder.info(for: DicomTag.sliceThickness), unit: "mm"),
                 icon: "square.split.2x1.fill"
             )
 
             MetadataRow(
                 label: "Bits Allocated",
-                value: decoder.info(for: .bitsAllocated),
+                value: decoder.info(for: DicomTag.bitsAllocated),
                 icon: "scalemass.fill"
             )
 
             MetadataRow(
                 label: "Photometric",
-                value: decoder.info(for: .photometricInterpretation),
+                value: decoder.info(for: DicomTag.photometricInterpretation),
                 icon: "photo.fill"
             )
 

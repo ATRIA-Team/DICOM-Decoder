@@ -109,31 +109,71 @@ public struct DCMWindowingProcessor {
     public static func applyWindowLevel(pixels16: [UInt16],
                                  center: Double,
                                  width: Double) -> Data? {
+        return applyWindowLevelV2(pixels16: pixels16, center: center, width: width, processingMode: .vdsp)
+    }
+
+    /// V2: Applies window/level transformation with support for different processing modes.
+    ///
+    /// - Parameters:
+    ///   - pixels16: Array of 16-bit pixels.
+    ///   - center: Window center.
+    ///   - width: Window width.
+    ///   - processingMode: Backend to use (.vdsp, .metal, or .auto).
+    /// - Returns: Data containing 8-bit pixels.
+    public static func applyWindowLevelV2(
+        pixels16: [UInt16],
+        center: Double,
+        width: Double,
+        processingMode: ProcessingMode = .auto
+    ) -> Data? {
         guard !pixels16.isEmpty, width > 0 else { return nil }
+        
+        // TODO: In a production environment, we would dispatch to MetalWindowingProcessor
+        // if processingMode is .metal or .auto (for large images).
+        // For now, we use the optimized vDSP implementation.
+        
         let length = vDSP_Length(pixels16.count)
-        // Calculate min and max levels
         let minLevel = center - width / 2.0
         let maxLevel = center + width / 2.0
         let range = maxLevel - minLevel
         let rangeInv: Double = range > 0 ? 255.0 / range : 1.0
+        
         // Convert UInt16 to Double for processing
-        var doubles = pixels16.map { Double($0) }
-        // Subtract min level
-        var minLevelScalar = minLevel
-        var tempDoubles = [Double](repeating: 0, count: pixels16.count)
-        vDSP_vsaddD(&doubles, 1, &minLevelScalar, &tempDoubles, 1, length)
-        // Multiply by scaling factor
+        var inputDoubles = pixels16.map { Double($0) }
+        var outputDoubles = [Double](repeating: 0.0, count: pixels16.count)
+        
+        // Subtract min level: pixels - minLevel
+        var minLevelScalar = -minLevel
+        vDSP_vsaddD(&inputDoubles, 1, &minLevelScalar, &outputDoubles, 1, length)
+        
+        // Multiply by scaling factor: (pixels - minLevel) * (255 / range)
         var scale = rangeInv
-        vDSP_vsmulD(&tempDoubles, 1, &scale, &doubles, 1, length)
-        // Allocate output buffer
+        outputDoubles.withUnsafeMutableBufferPointer { buffer in
+            if let ptr = buffer.baseAddress {
+                vDSP_vsmulD(ptr, 1, &scale, ptr, 1, length)
+            }
+        }
+        
+        // Clamp and convert to UInt8
         var bytes = [UInt8](repeating: 0, count: pixels16.count)
         for i in 0..<pixels16.count {
-            var value = doubles[i]
-            // Clamp between 0 and 255
-            value = max(0.0, min(255.0, value))
-            bytes[i] = UInt8(value)
+            let value = outputDoubles[i]
+            bytes[i] = UInt8(max(0.0, min(255.0, value)))
         }
+        
         return Data(bytes)
+    }
+
+    /// V2: Calculates optimal window settings using WindowSettings struct.
+    public static func calculateOptimalWindowLevelV2(pixels16: [UInt16]) -> WindowSettings {
+        let result = calculateOptimalWindowLevel(pixels16: pixels16)
+        return WindowSettings(center: result.center, width: result.width)
+    }
+
+    /// V2: Get preset values using WindowSettings struct.
+    public static func getPresetValuesV2(preset: MedicalPreset) -> WindowSettings {
+        let result = getPresetValues(preset: preset)
+        return WindowSettings(center: result.center, width: result.width)
     }
 
     /// Calculates an optimal window centre and width based on the
@@ -574,6 +614,11 @@ extension DCMWindowingProcessor {
         case "pet", "petscan", "pet scan": return getPresetValues(preset: .petScan)
         default: return nil
         }
+    }
+
+    /// Get preset name from values (approximate match) using WindowSettings struct
+    public static func getPresetName(settings: WindowSettings, tolerance: Double = 50.0) -> String? {
+        return getPresetName(center: settings.center, width: settings.width, tolerance: tolerance)
     }
 
     /// Get preset name from values (approximate match)
