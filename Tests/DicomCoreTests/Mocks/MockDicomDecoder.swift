@@ -158,11 +158,44 @@ public final class MockDicomDecoder: DicomDecoderProtocol, @unchecked Sendable {
         return pixelRepresentationTagValue == 1
     }
 
+    // MARK: - Temporal / Cine Properties
+
+    private var _frameTime: Double = 0.0
+    public var frameTime: Double {
+        get { queue.sync { _frameTime } }
+        set { queue.sync { _frameTime = newValue } }
+    }
+
+    private var _frameTimeVector: [Double] = []
+    public var frameTimeVector: [Double] {
+        get { queue.sync { _frameTimeVector } }
+        set { queue.sync { _frameTimeVector = newValue } }
+    }
+
+    private var _cineRate: Double = 0.0
+    public var cineRate: Double {
+        get { queue.sync { _cineRate } }
+        set { queue.sync { _cineRate = newValue } }
+    }
+
+    public var derivedFrameRate: Double {
+        if cineRate > 0 { return cineRate }
+        if frameTime > 0 { return 1000.0 / frameTime }
+        return 30.0 // Default for ultrasound
+    }
+
+    public var numberOfFrames: Int {
+        return nImages
+    }
+
     // MARK: - Configurable Method Returns
 
     private var _pixels8: [UInt8]?
     private var _pixels16: [UInt16]?
     private var _pixels24: [UInt8]?
+    private var _framePixels8: [Int: [UInt8]] = [:]
+    private var _framePixels16: [Int: [UInt16]] = [:]
+    private var _framePixels24: [Int: [UInt8]] = [:]
     private var _downsampledPixels16: (pixels: [UInt16], width: Int, height: Int)?
     private var _downsampledPixels8: (pixels: [UInt8], width: Int, height: Int)?
     private var _tags: [String: String] = [:]
@@ -260,6 +293,27 @@ public final class MockDicomDecoder: DicomDecoderProtocol, @unchecked Sendable {
         }
     }
 
+    /// Configures the mock with 8-bit pixel data for a specific frame
+    public func setFramePixels8(_ pixels: [UInt8], frame: Int) {
+        queue.sync {
+            _framePixels8[frame] = pixels
+        }
+    }
+
+    /// Configures the mock with 16-bit pixel data for a specific frame
+    public func setFramePixels16(_ pixels: [UInt16], frame: Int) {
+        queue.sync {
+            _framePixels16[frame] = pixels
+        }
+    }
+
+    /// Configures the mock with 24-bit pixel data for a specific frame
+    public func setFramePixels24(_ pixels: [UInt8], frame: Int) {
+        queue.sync {
+            _framePixels24[frame] = pixels
+        }
+    }
+
     /// Configures the mock with downsampled pixel data
     public func setDownsampledPixels16(_ pixels: [UInt16], width: Int, height: Int) {
         queue.sync {
@@ -341,6 +395,18 @@ public final class MockDicomDecoder: DicomDecoderProtocol, @unchecked Sendable {
 
     public func getPixels24() -> [UInt8]? {
         return queue.sync { _pixels24 }
+    }
+
+    public func getPixels8(frame: Int) -> [UInt8]? {
+        return queue.sync { _framePixels8[frame] ?? (frame == 0 ? _pixels8 : nil) }
+    }
+
+    public func getPixels16(frame: Int) -> [UInt16]? {
+        return queue.sync { _framePixels16[frame] ?? (frame == 0 ? _pixels16 : nil) }
+    }
+
+    public func getPixels24(frame: Int) -> [UInt8]? {
+        return queue.sync { _framePixels24[frame] ?? (frame == 0 ? _pixels24 : nil) }
     }
 
     /// Returns the stored downsampled 16-bit pixel buffer and its dimensions.

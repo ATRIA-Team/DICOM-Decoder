@@ -246,41 +246,41 @@ final class JPEGLosslessDecoderTests: XCTestCase {
 
         // Test case 1: First pixel of first row (x=0, y=0)
         // Expected: default predictor (2^15 = 32768)
-        let pred1 = decoder.computePredictor(x: 0, y: 0, pixels: pixels, width: width, precision: precision, selectionValue: 1)
+        let pred1 = decoder.computePredictor(x: 0, y: 0, pixels: pixels, width: width, precision: precision)
         XCTAssertEqual(pred1, defaultPredictor, "First pixel should use default predictor 2^(P-1)")
 
         // Test case 2: Second pixel of first row (x=1, y=0)
         // Expected: left neighbor (pixels[0] = 32768)
-        let pred2 = decoder.computePredictor(x: 1, y: 0, pixels: pixels, width: width, precision: precision, selectionValue: 1)
+        let pred2 = decoder.computePredictor(x: 1, y: 0, pixels: pixels, width: width, precision: precision)
         XCTAssertEqual(pred2, 32768, "Second pixel should use left neighbor as predictor")
 
         // Test case 3: Third pixel of first row (x=2, y=0)
         // Expected: left neighbor (pixels[1] = 30000)
-        let pred3 = decoder.computePredictor(x: 2, y: 0, pixels: pixels, width: width, precision: precision, selectionValue: 1)
+        let pred3 = decoder.computePredictor(x: 2, y: 0, pixels: pixels, width: width, precision: precision)
         XCTAssertEqual(pred3, 30000, "Third pixel should use left neighbor as predictor")
 
         // Test case 4: First pixel of second row (x=0, y=1)
         // Expected: default predictor (2^15 = 32768)
-        let pred4 = decoder.computePredictor(x: 0, y: 1, pixels: pixels, width: width, precision: precision, selectionValue: 1)
+        let pred4 = decoder.computePredictor(x: 0, y: 1, pixels: pixels, width: width, precision: precision)
         XCTAssertEqual(pred4, defaultPredictor, "First pixel of each row should use default predictor")
 
         // Test case 5: Second pixel of second row (x=1, y=1)
         // Expected: left neighbor (pixels[4] = 35000)
-        let pred5 = decoder.computePredictor(x: 1, y: 1, pixels: pixels, width: width, precision: precision, selectionValue: 1)
+        let pred5 = decoder.computePredictor(x: 1, y: 1, pixels: pixels, width: width, precision: precision)
         XCTAssertEqual(pred5, 35000, "Second pixel of row should use left neighbor as predictor")
 
         // Test with different precision (12-bit)
         let precision12 = 12
         let defaultPredictor12 = 1 << (precision12 - 1)  // 2^11 = 2048 for 12-bit
 
-        let pred6 = decoder.computePredictor(x: 0, y: 0, pixels: pixels, width: width, precision: precision12, selectionValue: 1)
+        let pred6 = decoder.computePredictor(x: 0, y: 0, pixels: pixels, width: width, precision: precision12)
         XCTAssertEqual(pred6, defaultPredictor12, "12-bit precision should use 2^11 = 2048 as default predictor")
 
         // Test with different precision (8-bit)
         let precision8 = 8
         let defaultPredictor8 = 1 << (precision8 - 1)  // 2^7 = 128 for 8-bit
 
-        let pred7 = decoder.computePredictor(x: 0, y: 0, pixels: pixels, width: width, precision: precision8, selectionValue: 1)
+        let pred7 = decoder.computePredictor(x: 0, y: 0, pixels: pixels, width: width, precision: precision8)
         XCTAssertEqual(pred7, defaultPredictor8, "8-bit precision should use 2^7 = 128 as default predictor")
     }
 
@@ -300,18 +300,18 @@ final class JPEGLosslessDecoderTests: XCTestCase {
 
         // All pixels in a single-column image should use default predictor
         for y in 0..<height1 {
-            let pred = decoder.computePredictor(x: 0, y: y, pixels: pixels1, width: width1, precision: precision, selectionValue: 1)
+            let pred = decoder.computePredictor(x: 0, y: y, pixels: pixels1, width: width1, precision: precision)
             XCTAssertEqual(pred, defaultPredictor, "Single-column image should always use default predictor")
         }
 
         // Test with maximum precision values
         let pixels16bit = [UInt16](repeating: 65535, count: 10)
-        let pred16 = decoder.computePredictor(x: 1, y: 0, pixels: pixels16bit, width: 5, precision: 16, selectionValue: 1)
+        let pred16 = decoder.computePredictor(x: 1, y: 0, pixels: pixels16bit, width: 5, precision: 16)
         XCTAssertEqual(pred16, 65535, "Should handle maximum 16-bit value")
 
         // Test with minimum precision values
         let pixels16bitMin = [UInt16](repeating: 0, count: 10)
-        let predMin = decoder.computePredictor(x: 1, y: 0, pixels: pixels16bitMin, width: 5, precision: 16, selectionValue: 1)
+        let predMin = decoder.computePredictor(x: 1, y: 0, pixels: pixels16bitMin, width: 5, precision: 16)
         XCTAssertEqual(predMin, 0, "Should handle minimum value (0)")
     }
 
@@ -361,15 +361,15 @@ final class JPEGLosslessDecoderTests: XCTestCase {
         pixels[4] = 35000
 
         // First pixel: default predictor
-        let pred1 = decoder.computePredictor(x: 0, y: 0, pixels: pixels, width: width, precision: precision, selectionValue: 1)
+        let pred1 = decoder.computePredictor(x: 0, y: 0, pixels: pixels, width: width, precision: precision)
         XCTAssertEqual(pred1, defaultPredictor, "First pixel should use default predictor 2^(P-1)")
 
         // Second pixel: left neighbor (A)
-        let pred2 = decoder.computePredictor(x: 1, y: 0, pixels: pixels, width: width, precision: precision, selectionValue: 1)
+        let pred2 = decoder.computePredictor(x: 1, y: 0, pixels: pixels, width: width, precision: precision)
         XCTAssertEqual(pred2, 32768, "Should use left neighbor (A) as predictor")
 
         // First pixel of second row: default predictor
-        let pred3 = decoder.computePredictor(x: 0, y: 1, pixels: pixels, width: width, precision: precision, selectionValue: 1)
+        let pred3 = decoder.computePredictor(x: 0, y: 1, pixels: pixels, width: width, precision: precision)
         XCTAssertEqual(pred3, defaultPredictor, "First pixel of row should use default predictor")
     }
 
@@ -588,7 +588,7 @@ final class JPEGLosslessDecoderTests: XCTestCase {
         _ = pred1
 
         // Selection value 15 (invalid)
-        let pred2 = decoder.computePredictor(x: 1, y: 1, pixels: pixels, width: width, precision: precision, selectionValue: 15)
+        let pred2 = decoder.computePredictor(x: 1, y: 1, pixels: pixels, width: width, precision: precision5)
         _ = pred2
     }
 
@@ -661,10 +661,10 @@ final class JPEGLosslessDecoderTests: XCTestCase {
             // Selection value 1: Predictor A (left)
             // First column uses default, others use left pixel
             if x == 0 {
-                let pred1 = decoder.computePredictor(x: x, y: 0, pixels: pixels, width: width, precision: precision, selectionValue: 1)
+                let pred1 = decoder.computePredictor(x: x, y: 0, pixels: pixels, width: width, precision: precision)
                 XCTAssertEqual(pred1, defaultPredictor, "Selection value 1 should use default predictor for first pixel")
             } else {
-                let pred1 = decoder.computePredictor(x: x, y: 0, pixels: pixels, width: width, precision: precision, selectionValue: 1)
+                let pred1 = decoder.computePredictor(x: x, y: 0, pixels: pixels, width: width, precision: precision)
                 XCTAssertEqual(pred1, Int(pixels[x - 1]), "Selection value 1 should use left pixel for first row at x=\(x)")
             }
 
@@ -719,7 +719,7 @@ final class JPEGLosslessDecoderTests: XCTestCase {
             XCTAssertEqual(pred0, 0, "Selection value 0 should return 0 for first column at y=\(y)")
 
             // Selection value 1: Predictor A (left) - should use default for first column
-            let pred1 = decoder.computePredictor(x: 0, y: y, pixels: pixels, width: width, precision: precision, selectionValue: 1)
+            let pred1 = decoder.computePredictor(x: 0, y: y, pixels: pixels, width: width, precision: precision)
             XCTAssertEqual(pred1, defaultPredictor, "Selection value 1 should use default predictor for first column at y=\(y)")
 
             // Selection value 2: Predictor B (above) - should use pixel above

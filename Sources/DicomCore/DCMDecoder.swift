@@ -68,6 +68,72 @@ public final class DCMDecoder: DicomDecoderProtocol {
     
     /// Creates a new DICOM decoder instance.
     public init() {}
+
+    /// Creates a new DICOM decoder instance and loads a DICOM file from a URL.
+    ///
+    /// - Parameter url: URL pointing to the DICOM file
+    /// - Throws: DICOMError if the file cannot be read or parsed
+    public convenience init(contentsOf url: URL) throws {
+        self.init()
+        self.setDicomFilename(url.path)
+        if !self.dicomFileReadSuccess {
+            throw DICOMError.invalidDICOMFormat(reason: "Failed to read DICOM file at \(url.path)")
+        }
+    }
+
+    /// Creates a new DICOM decoder instance and loads a DICOM file from a file path.
+    ///
+    /// - Parameter path: File system path to the DICOM file
+    /// - Throws: DICOMError if the file cannot be read or parsed
+    public convenience init(contentsOfFile path: String) throws {
+        self.init()
+        self.setDicomFilename(path)
+        if !self.dicomFileReadSuccess {
+            throw DICOMError.invalidDICOMFormat(reason: "Failed to read DICOM file at \(path)")
+        }
+    }
+
+    /// Factory method to load a DICOM file from a URL.
+    public static func load(from url: URL) throws -> DCMDecoder {
+        return try DCMDecoder(contentsOf: url)
+    }
+
+    /// Factory method to load a DICOM file from a file path.
+    public static func load(fromFile path: String) throws -> DCMDecoder {
+        return try DCMDecoder(contentsOfFile: path)
+    }
+
+    /// Async initializer to load a DICOM file from a URL.
+    @available(macOS 10.15, iOS 13.0, *)
+    public convenience init(contentsOf url: URL) async throws {
+        self.init()
+        let success = await self.loadDICOMFileAsync(url.path)
+        if !success {
+            throw DICOMError.invalidDICOMFormat(reason: "Failed to read DICOM file at \(url.path)")
+        }
+    }
+
+    /// Async initializer to load a DICOM file from a file path.
+    @available(macOS 10.15, iOS 13.0, *)
+    public convenience init(contentsOfFile path: String) async throws {
+        self.init()
+        let success = await self.loadDICOMFileAsync(path)
+        if !success {
+            throw DICOMError.invalidDICOMFormat(reason: "Failed to read DICOM file at \(path)")
+        }
+    }
+
+    /// Async factory method to load a DICOM file from a URL.
+    @available(macOS 10.15, iOS 13.0, *)
+    public static func load(from url: URL) async throws -> DCMDecoder {
+        return try await DCMDecoder(contentsOf: url)
+    }
+
+    /// Async factory method to load a DICOM file from a file path.
+    @available(macOS 10.15, iOS 13.0, *)
+    public static func load(fromFile path: String) async throws -> DCMDecoder {
+        return try await DCMDecoder(contentsOfFile: path)
+    }
     
     // MARK: - Properties
 
