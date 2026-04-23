@@ -10,7 +10,8 @@ let package = Package(
         .visionOS(.v1)
     ],
     products: [
-        .library(name: "DicomCore", targets: ["DicomCore"])
+        .library(name: "DicomCore", targets: ["DicomCore"]),
+        .library(name: "DicomSwiftUI", targets: ["DicomSwiftUI"])
     ],
     targets: [
         .target(
@@ -20,6 +21,11 @@ let package = Package(
             resources: [
                 .process("Resources")
             ]
+        ),
+        .target(
+            name: "DicomSwiftUI",
+            dependencies: ["DicomCore"],
+            path: "Sources/DicomSwiftUI"
         ),
         .testTarget(
             name: "DicomCoreTests",
