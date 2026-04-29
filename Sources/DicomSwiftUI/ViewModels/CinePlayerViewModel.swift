@@ -128,13 +128,21 @@ public final class CinePlayerViewModel: ObservableObject {
         let bitDepth = decoder.bitDepth
         let width = decoder.width
         let height = decoder.height
+        let spp = decoder.samplesPerPixel
         let center = self.windowCenter
         let winWidth = self.windowWidth
         
-        return await Task.detached(priority: .userInitiated) { [decoder, center, winWidth, bitDepth, width, height] in
+        return await Task.detached(priority: .userInitiated) { [decoder, center, winWidth, bitDepth, width, height, spp] in
             let cgImage: CGImage?
             
-            if bitDepth == 8 {
+            if spp == 3 {
+                // RGB / YBR color data (e.g. ultrasound, TEE)
+                if let pixels24 = decoder.getPixels24(frame: index) {
+                    cgImage = CGImageFactory.createRGBImage(from: pixels24, width: width, height: height)
+                } else {
+                    cgImage = nil
+                }
+            } else if bitDepth == 8 {
                 if let pixels8 = decoder.getPixels8(frame: index) {
                     cgImage = CGImageFactory.createImage(from: pixels8, width: width, height: height)
                 } else {
@@ -152,7 +160,6 @@ public final class CinePlayerViewModel: ObservableObject {
                     cgImage = nil
                 }
             } else {
-                // Future expansion: 24-bit RGB extraction
                 cgImage = nil
             }
             return cgImage

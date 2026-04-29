@@ -206,6 +206,57 @@ public enum CGImageFactory {
         )
     }
 
+    // MARK: - RGB Image Creation
+
+    /// Creates a CGImage from 24-bit interleaved RGB pixel data.
+    ///
+    /// Converts an array of interleaved RGB pixel values (3 bytes per pixel: R, G, B)
+    /// into a ``CGImage`` suitable for display. This is used for color DICOM images
+    /// such as ultrasound (US), where `SamplesPerPixel == 3`.
+    ///
+    /// - Parameters:
+    ///   - pixels: Array of interleaved RGB pixel values. Must contain exactly
+    ///     `width × height × 3` elements in row-major order.
+    ///   - width: Image width in pixels. Must be > 0.
+    ///   - height: Image height in pixels. Must be > 0.
+    ///
+    /// - Returns: A ``CGImage`` containing the RGB image, or `nil` if:
+    ///   - Width or height is ≤ 0
+    ///   - Pixel count doesn't match `width × height × 3`
+    ///   - Image creation fails due to memory constraints
+    public static func createRGBImage(from pixels: [UInt8], width: Int, height: Int) -> CGImage? {
+        guard width > 0, height > 0 else { return nil }
+
+        let (pixelCount, overflow) = width.multipliedReportingOverflow(by: height)
+        guard !overflow else { return nil }
+        let (expectedCount, overflow2) = pixelCount.multipliedReportingOverflow(by: 3)
+        guard !overflow2, pixels.count == expectedCount else { return nil }
+
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bitsPerComponent = 8
+        let bytesPerPixel = 3
+        let bytesPerRow = width * bytesPerPixel
+        let bitmapInfo = CGBitmapInfo(rawValue: CGImageAlphaInfo.none.rawValue)
+
+        guard let provider = CGDataProvider(data: Data(pixels) as CFData) else {
+            return nil
+        }
+
+        return CGImage(
+            width: width,
+            height: height,
+            bitsPerComponent: bitsPerComponent,
+            bitsPerPixel: bitsPerComponent * bytesPerPixel,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: bitmapInfo,
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: true,
+            intent: .defaultIntent
+        )
+    }
+
     // MARK: - Private Helpers
 
     /// Fallback image creation using device gray color space.
