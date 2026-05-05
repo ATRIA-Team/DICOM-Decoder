@@ -81,6 +81,7 @@ DICOM (Digital Imaging and Communications in Medicine) is the standard for medic
 
 ### Image Processing
 
+- Multi-Planar Reconstruction (MPR) engine to extract Axial, Coronal, and Sagittal planes from 3D volumes
 - Window/Level with medical presets (CT, mammography, PET, and more)
 - Automatic preset suggestions based on modality and body part
 - Quality metrics (SNR, contrast, dynamic range)
@@ -767,6 +768,7 @@ The library includes **DicomSwiftUI**, a complete set of pre-built SwiftUI compo
 | Component | Description | Key Features |
 |-----------|-------------|--------------|
 | **DicomImageView** | Display DICOM images | Automatic scaling, windowing modes, GPU acceleration |
+| **MPRView** | Display Multi-Planar Reconstruction | 3 orthogonal planes (Axial, Coronal, Sagittal) in a grid, visionOS glass effect support |
 | **WindowingControlView** | Interactive window/level controls | 13 medical presets, sliders, automatic optimization |
 | **SeriesNavigatorView** | Navigate DICOM series | Slice navigation, progress indicator, keyboard shortcuts |
 | **MetadataView** | Display DICOM metadata | Organized sections, formatted values, accessibility |

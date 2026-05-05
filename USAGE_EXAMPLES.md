@@ -2068,6 +2068,33 @@ class CompleteDIExample: XCTestCase {
 
 ## Advanced Features
 
+### Multi-Planar Reconstruction (MPR)
+
+You can extract Coronal and Sagittal planes from a 3D DICOM volume using `MPRProcessor`.
+
+```swift
+import DicomCore
+import DicomSwiftUI
+
+// 1. Load a DICOM series volume
+let loader = DicomSeriesLoader()
+let volume = try await loader.loadSeries(in: URL(fileURLWithPath: "/path/to/CT_Series"))
+
+// 2. Extract slices along different axes
+let axialIndex = volume.depth / 2
+let coronalIndex = volume.height / 2
+let sagittalIndex = volume.width / 2
+
+let axialPixels = MPRProcessor.extractAxialSlice(from: volume, at: axialIndex)
+let coronalPixels = MPRProcessor.extractCoronalSlice(from: volume, at: coronalIndex)
+let sagittalPixels = MPRProcessor.extractSagittalSlice(from: volume, at: sagittalIndex)
+
+// 3. (Optional) In SwiftUI, use MPRView and MPRViewModel for a complete interactive experience
+// let viewModel = MPRViewModel()
+// await viewModel.loadVolume(from: url)
+// MPRView(viewModel: viewModel)
+```
+
 ### Hounsfield Unit Conversion (CT Images)
 
 ```swift

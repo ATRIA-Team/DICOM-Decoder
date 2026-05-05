@@ -104,6 +104,12 @@ if decoder.compressedImage {
 
 ## Images and Pixels
 
+### Multi-Planar Reconstruction (MPR)
+A process of creating new 2D images in different planes from a 3D volumetric dataset (like a CT or MRI series). Standard planes are:
+- **Axial**: Slices viewed from top to bottom (like looking at slices of bread).
+- **Coronal**: Slices viewed from front to back.
+- **Sagittal**: Slices viewed from side to side.
+
 ### Pixel Data
 Tag `(7FE0,0010)` - contains the raw pixel values of the image.
 

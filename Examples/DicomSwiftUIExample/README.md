@@ -4,9 +4,11 @@ A complete reference implementation demonstrating all SwiftUI components in the 
 
 ## Overview
 
-This example app showcases the four main SwiftUI components provided by the DicomSwiftUI library:
+This example app showcases the main SwiftUI components provided by the DicomSwiftUI library:
 
 - **DicomImageView** - Display DICOM images with automatic scaling and windowing
+- **MPRView** - Display Multi-Planar Reconstruction (Axial, Coronal, Sagittal)
+- **VisionMPRExampleView** - Spatial MPR visualization for visionOS
 - **WindowingControlView** - Interactive window/level adjustment controls
 - **SeriesNavigatorView** - Navigate through multi-slice DICOM series
 - **MetadataView** - Display formatted DICOM metadata tags

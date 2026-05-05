@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Multi-Planar Reconstruction (MPR)**:
+  - `MPRProcessor`: High-performance utility to extract orthogonal slices (Axial, Coronal, Sagittal) from a 3D `DicomSeriesVolume`.
+  - `MPRViewModel`: State management for multi-planar display, handling indices and rendering across all axes.
+  - `MPRView`: SwiftUI component displaying the 3 orthogonal views in a synchronized grid with windowing support.
+  - `VisionMPRExampleView`: Native visionOS spatial computing integration for volumetric MPR visualization with glass background and hover effects.
+
 - **Swift-idiomatic throwing initializers** for DICOM file loading:
   - `try DCMDecoder(contentsOf: url)` and `try DCMDecoder(contentsOfFile: path)`
   - `try await DCMDecoder(contentsOf: url)` and `try await DCMDecoder(contentsOfFile: path)`
