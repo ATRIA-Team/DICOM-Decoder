@@ -268,6 +268,10 @@ struct ComponentExamplesView: View {
         List {
             Section(header: Text("Component Examples")) {
                 NavigationLink("Image View", destination: ImageViewExample())
+                NavigationLink("Multi-Planar (MPR)", destination: MPRExampleView())
+                #if os(visionOS) || os(iOS) || os(macOS)
+                NavigationLink("Spatial MPR (Vision)", destination: VisionMPRExampleView())
+                #endif
                 NavigationLink("Windowing Controls", destination: WindowingExample())
                 NavigationLink("Series Navigator", destination: SeriesNavigatorExample())
                 NavigationLink("Metadata Display", destination: MetadataExample())

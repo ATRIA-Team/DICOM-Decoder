@@ -1332,3 +1332,28 @@ extension DCMDecoder {
         return DCMWindowingProcessor.calculateQualityMetrics(pixels16: pixels)
     }
 }
+
+// MARK: - DCMDecoder V2 API Extensions
+
+extension DCMDecoder {
+    /// V2 API: Returns window settings as a type-safe struct.
+    public var windowSettingsV2: WindowSettings {
+        return WindowSettings(center: windowCenter, width: windowWidth)
+    }
+
+    /// V2 API: Returns pixel spacing as a type-safe struct.
+    public var pixelSpacingV2: PixelSpacing {
+        return PixelSpacing(x: pixelWidth, y: pixelHeight, z: pixelDepth)
+    }
+
+    /// V2 API: Returns rescale parameters as a type-safe struct.
+    public var rescaleParametersV2: RescaleParameters {
+        return RescaleParameters(intercept: rescaleIntercept, slope: rescaleSlope)
+    }
+
+    /// V2 API: Calculates optimal window/level as a type-safe struct.
+    public func calculateOptimalWindowV2() -> WindowSettings? {
+        guard let values = calculateOptimalWindow() else { return nil }
+        return WindowSettings(center: values.center, width: values.width)
+    }
+}

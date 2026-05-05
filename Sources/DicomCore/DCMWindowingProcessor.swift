@@ -80,6 +80,18 @@ public enum MedicalPreset: Int, CaseIterable {
     }
 }
 
+// MARK: - Processing Mode
+
+/// Processing backend used for image windowing operations.
+public enum ProcessingMode: Sendable {
+    /// CPU-based processing using vDSP (Accelerate framework)
+    case vdsp
+    /// GPU-based processing using Metal
+    case metal
+    /// Automatic selection (Metal for large images, vDSP for small)
+    case auto
+}
+
 // MARK: - Window/Level Operations Struct
 
 /// A collection of static methods providing window/level
@@ -104,12 +116,41 @@ public struct DCMWindowingProcessor {
     ///   - pixels16: An array of unsigned 16‑bit pixel intensities.
     ///   - center: The centre of the window.
     ///   - width: The width of the window.
+    ///   - processingMode: The processing backend to use. Defaults to `.auto`.
     /// - Returns: A ``Data`` object containing 8‑bit pixel values or
     ///   `nil` if the input is invalid.
     public static func applyWindowLevel(pixels16: [UInt16],
                                  center: Double,
-                                 width: Double) -> Data? {
+                                 width: Double,
+                                 processingMode: ProcessingMode = .auto) -> Data? {
         guard !pixels16.isEmpty, width > 0 else { return nil }
+
+        // Decide which backend to use
+        let useMetal: Bool
+        switch processingMode {
+        case .vdsp:
+            useMetal = false
+        case .metal:
+            useMetal = MetalWindowingProcessor.isMetalAvailable
+        case .auto:
+            // Use Metal for images 800x800 or larger if available
+            useMetal = pixels16.count >= (800 * 800) && MetalWindowingProcessor.isMetalAvailable
+        }
+
+        if useMetal {
+            do {
+                let metalProcessor = try MetalWindowingProcessor()
+                return try metalProcessor.applyWindowLevel(
+                    pixels16: pixels16,
+                    center: center,
+                    width: width
+                )
+            } catch {
+                // Fallback to vDSP on failure
+            }
+        }
+
+        // vDSP (CPU) Implementation
         let length = vDSP_Length(pixels16.count)
         // Calculate min and max levels
         let minLevel = center - width / 2.0
@@ -634,5 +675,35 @@ extension DCMWindowingProcessor {
         }
         
         return Data(bytes)
+    }
+}
+
+// MARK: - DCMWindowingProcessor V2 API Extensions
+
+extension DCMWindowingProcessor {
+    
+    /// V2 API: Calculates an optimal window center and width, returning a WindowSettings struct.
+    public static func calculateOptimalWindowLevelV2(pixels16: [UInt16]) -> WindowSettings {
+        let values = calculateOptimalWindowLevel(pixels16: pixels16)
+        return WindowSettings(center: values.center, width: values.width)
+    }
+    
+    /// V2 API: Returns window settings for a medical imaging preset.
+    public static func getPresetValuesV2(preset: MedicalPreset) -> WindowSettings {
+        let values = getPresetValues(preset: preset)
+        return WindowSettings(center: values.center, width: values.width)
+    }
+    
+    /// V2 API: Returns window settings for a named preset.
+    public static func getPresetValuesV2(named presetName: String) -> WindowSettings? {
+        guard let values = getPresetValues(named: presetName) else { return nil }
+        return WindowSettings(center: values.center, width: values.width)
+    }
+    
+    /// V2 API: Calculates optimal window settings for a batch of images.
+    public static func batchCalculateOptimalWindowLevelV2(imagePixels: [[UInt16]]) -> [WindowSettings] {
+        return batchCalculateOptimalWindowLevel(imagePixels: imagePixels).map {
+            WindowSettings(center: $0.center, width: $0.width)
+        }
     }
 }

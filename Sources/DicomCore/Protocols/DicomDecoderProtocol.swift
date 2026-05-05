@@ -246,4 +246,18 @@ public protocol DicomDecoderProtocol: AnyObject {
     /// Returns image quality metrics.
     /// - Returns: Dictionary with quality metrics or nil if no pixel data
     func getQualityMetrics() -> [String: Double]?
+
+    // MARK: - V2 APIs (Value Types)
+
+    /// V2 API: Returns window settings as a type-safe struct.
+    var windowSettingsV2: WindowSettings { get }
+
+    /// V2 API: Returns pixel spacing as a type-safe struct.
+    var pixelSpacingV2: PixelSpacing { get }
+
+    /// V2 API: Returns rescale parameters as a type-safe struct.
+    var rescaleParametersV2: RescaleParameters { get }
+
+    /// V2 API: Calculates optimal window/level as a type-safe struct.
+    func calculateOptimalWindowV2() -> WindowSettings?
 }
