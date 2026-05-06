@@ -237,8 +237,8 @@ internal final class DCMPixelReader {
             return result
         }
 
-        // Grayscale 16‑bit
-        if samplesPerPixel == 1 && bitDepth == 16 {
+        // Grayscale 16‑bit or 12-bit (stored in 16 bits)
+        if samplesPerPixel == 1 && (bitDepth == 16 || bitDepth == 12) {
             guard let metrics = computePixelMetrics(
                 width: width,
                 height: height,

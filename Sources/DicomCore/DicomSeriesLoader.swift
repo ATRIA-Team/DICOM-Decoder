@@ -102,7 +102,7 @@ public final class DicomSeriesLoader: DicomSeriesLoaderProtocol {
             guard decoder.samplesPerPixel == 1 else {
                 throw DicomSeriesLoaderError.unsupportedSamplesPerPixel(decoder.samplesPerPixel)
             }
-            guard decoder.bitDepth == 16 else {
+            guard decoder.bitDepth == 16 || decoder.bitDepth == 12 else {
                 throw DicomSeriesLoaderError.unsupportedBitDepth(decoder.bitDepth)
             }
 
@@ -290,7 +290,7 @@ private extension DicomSeriesLoader {
         guard decoder.dicomFileReadSuccess,
               decoder.width == expectedWidth,
               decoder.height == expectedHeight,
-              decoder.bitDepth == 16,
+              (decoder.bitDepth == 16 || decoder.bitDepth == 12),
               decoder.samplesPerPixel == 1 else {
             throw DicomSeriesLoaderError.failedToDecode(url)
         }

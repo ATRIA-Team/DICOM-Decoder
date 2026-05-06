@@ -441,7 +441,7 @@ public final class DCMDecoder: DicomDecoderProtocol {
     /// - Returns: A tuple containing `pixels` (row-major downsampled `UInt16` values), `width`, and `height`; returns `nil` if the image is not 16-bit single-channel or pixel data is unavailable.
     public func getDownsampledPixels16(maxDimension: Int = 150) -> (pixels: [UInt16], width: Int, height: Int)? {
         return synchronized {
-            guard samplesPerPixel == 1 && bitDepth == 16 else { return nil }
+            guard samplesPerPixel == 1 && (bitDepth == 16 || bitDepth == 12) else { return nil }
             guard offset > 0 else { return nil }
 
             let startTime = CFAbsoluteTimeGetCurrent()
@@ -577,9 +577,9 @@ public final class DCMDecoder: DicomDecoderProtocol {
                 return nil
             }
 
-            // Validate this is a 16-bit grayscale image
-            guard bitDepth == 16, samplesPerPixel == 1 else {
-                logger.warning("getPixels16(range:) called on non-16-bit grayscale image (bitDepth=\(bitDepth), samplesPerPixel=\(samplesPerPixel))")
+            // Validate this is a 16-bit (or 12-bit) grayscale image
+            guard (bitDepth == 16 || bitDepth == 12), samplesPerPixel == 1 else {
+                logger.warning("getPixels16(range:) called on non-16/12-bit grayscale image (bitDepth=\(bitDepth), samplesPerPixel=\(samplesPerPixel))")
                 return nil
             }
 
