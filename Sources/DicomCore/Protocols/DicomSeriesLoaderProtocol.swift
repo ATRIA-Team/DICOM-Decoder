@@ -56,4 +56,16 @@ public protocol DicomSeriesLoaderProtocol: AnyObject {
     /// - Throws: `DicomSeriesLoaderError` on validation or decoding failures
     func loadSeries(in directory: URL,
                     progress: ProgressHandler?) throws -> DicomSeriesVolume
+
+    /// Loads a DICOM series from an explicit file list, ordering slices by Image Position (Patient).
+    ///
+    /// Use this when discovery has already identified the exact files belonging to one series.
+    ///
+    /// - Parameters:
+    ///   - fileURLs: DICOM files belonging to one series
+    ///   - progress: Optional callback invoked with (fractionComplete, slicesCopied, sliceData, volume)
+    /// - Returns: `DicomSeriesVolume` with voxel buffer and geometry metadata
+    /// - Throws: `DicomSeriesLoaderError` on validation or decoding failures
+    func loadSeries(from fileURLs: [URL],
+                    progress: ProgressHandler?) throws -> DicomSeriesVolume
 }

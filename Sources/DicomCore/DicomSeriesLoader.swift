@@ -76,7 +76,16 @@ public final class DicomSeriesLoader: DicomSeriesLoaderProtocol {
         guard !fileURLs.isEmpty else {
             throw DicomSeriesLoaderError.noDicomFiles
         }
+        return try loadSeries(from: fileURLs, progress: progress)
+    }
 
+    /// Loads a DICOM series from an explicit file list, ordering slices by Image Position (Patient).
+    /// This is useful when an application has already discovered and isolated one series.
+    public func loadSeries(from fileURLs: [URL],
+                           progress: ProgressHandler? = nil) throws -> DicomSeriesVolume {
+        guard !fileURLs.isEmpty else {
+            throw DicomSeriesLoaderError.noDicomFiles
+        }
         // First pass: read headers to collect geometry and ordering data.
         var firstDecoder: DicomDecoderProtocol?
         var orientation: (row: SIMD3<Double>, column: SIMD3<Double>)?
@@ -84,7 +93,7 @@ public final class DicomSeriesLoader: DicomSeriesLoaderProtocol {
         var rescaleSlope: Double = 1.0
         var rescaleIntercept: Double = 0.0
         var pixelRepresentation: Int = 0
-        var seriesDescription = directory.lastPathComponent
+        var seriesDescription = fileURLs.first?.deletingLastPathComponent().lastPathComponent ?? "DICOM Series"
 
         var width = 0
         var height = 0

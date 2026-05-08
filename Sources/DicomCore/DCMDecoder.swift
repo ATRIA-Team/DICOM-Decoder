@@ -385,15 +385,13 @@ public final class DCMDecoder: DicomDecoderProtocol {
             if let reader = reader {
                 tagParser = DCMTagParser(data: dicomData, dict: dict, binaryReader: reader)
             }
-            // Parse the header (readFileInfo is called within synchronized block)
+            // Parse the header. Pixel data is loaded lazily by getPixels*().
             if readFileInfoUnsafe() {
-                // If compressed transfer syntax, attempt to decode compressed pixel data.
                 if !compressedImage {
                     readPixelsUnsafe()
                     dicomFileReadSuccess = pixels8 != nil || pixels16 != nil || pixels24 != nil
                 } else {
-                    decodeCompressedPixelDataUnsafe()
-                    dicomFileReadSuccess = pixels8 != nil || pixels16 != nil || pixels24 != nil
+                    dicomFileReadSuccess = true
                 }
             } else {
                 dicomFileReadSuccess = false
@@ -407,6 +405,7 @@ public final class DCMDecoder: DicomDecoderProtocol {
     public func getPixels8() -> [UInt8]? {
         return synchronized {
             if pixels8 == nil && !compressedImage { readPixelsUnsafe() }
+            if pixels8 == nil && compressedImage { decodeCompressedPixelDataUnsafe() }
             return pixels8
         }
     }
@@ -417,6 +416,7 @@ public final class DCMDecoder: DicomDecoderProtocol {
     public func getPixels16() -> [UInt16]? {
         return synchronized {
             if pixels16 == nil && !compressedImage { readPixelsUnsafe() }
+            if pixels16 == nil && compressedImage { decodeCompressedPixelDataUnsafe() }
             return pixels16
         }
     }
@@ -427,6 +427,7 @@ public final class DCMDecoder: DicomDecoderProtocol {
     public func getPixels24() -> [UInt8]? {
         return synchronized {
             if pixels24 == nil && !compressedImage { readPixelsUnsafe() }
+            if pixels24 == nil && compressedImage { decodeCompressedPixelDataUnsafe() }
             return pixels24
         }
     }
